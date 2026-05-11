@@ -1,0 +1,177 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { getCourses, createCourse } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
+
+const SUBJECTS = ['math','physique','histoire','info','langues','eco','philo']
+const LEVELS   = ['college','seconde','premiere','terminale','prepa','superieur']
+const SUBJECT_EMOJI = { math:'📐', physique:'⚛️', histoire:'🗺️', info:'💻', langues:'🌍', eco:'📊', philo:'🦉' }
+const SUBJECT_LABEL = { math:'Maths', physique:'Physique', histoire:'Histoire', info:'Informatique', langues:'Langues', eco:'Économie', philo:'Philosophie' }
+const LEVEL_LABEL   = { college:'Collège', seconde:'Seconde', premiere:'Première', terminale:'Terminale', prepa:'Prépa', superieur:'Supérieur' }
+const LEVEL_BADGE   = { college:'badge-gray', seconde:'badge-blue', premiere:'badge-blue', terminale:'badge-amber', prepa:'badge-purple', superieur:'badge-green' }
+
+function Modal({ onClose, onCreated }) {
+  const { user } = useAuth()
+  const [form, setForm] = useState({ title:'', description:'', subject:'math', level:'terminale', tags:'' })
+  const [loading, setLoading] = useState(false)
+  const [error, setError]   = useState('')
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError(''); setLoading(true)
+    const { data, error } = await createCourse({
+      ...form,
+      tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
+      user_id: user.id,
+    })
+    setLoading(false)
+    if (error) { setError(error.message); return }
+    onCreated(data)
+    onClose()
+  }
+
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.7)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      zIndex:500, padding:'1rem',
+    }} onClick={onClose}>
+      <div className="card fade-in" style={{ width:'100%', maxWidth:480 }} onClick={e => e.stopPropagation()}>
+        <h2 style={{ fontSize:'1.1rem', fontWeight:600, marginBottom:'1.25rem' }}>✏️ Créer un cours</h2>
+        {error && <div className="error-msg" style={{ marginBottom:'1rem' }}>{error}</div>}
+        <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:'0.85rem' }}>
+          <div>
+            <label style={{ fontSize:'0.8rem', color:'var(--text2)', display:'block', marginBottom:'0.3rem' }}>Titre *</label>
+            <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="ex: Cours d'intégrales Term S" required />
+          </div>
+          <div>
+            <label style={{ fontSize:'0.8rem', color:'var(--text2)', display:'block', marginBottom:'0.3rem' }}>Description</label>
+            <textarea rows={3} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Décrivez brièvement ce cours..." style={{ resize:'vertical' }} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+            <div>
+              <label style={{ fontSize:'0.8rem', color:'var(--text2)', display:'block', marginBottom:'0.3rem' }}>Matière *</label>
+              <select value={form.subject} onChange={e=>setForm(f=>({...f,subject:e.target.value}))}>
+                {SUBJECTS.map(s => <option key={s} value={s}>{SUBJECT_EMOJI[s]} {SUBJECT_LABEL[s]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize:'0.8rem', color:'var(--text2)', display:'block', marginBottom:'0.3rem' }}>Niveau *</label>
+              <select value={form.level} onChange={e=>setForm(f=>({...f,level:e.target.value}))}>
+                {LEVELS.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize:'0.8rem', color:'var(--text2)', display:'block', marginBottom:'0.3rem' }}>Tags (séparés par virgule)</label>
+            <input value={form.tags} onChange={e=>setForm(f=>({...f,tags:e.target.value}))} placeholder="ex: bac, analyse, intégrales" />
+          </div>
+          <div style={{ display:'flex', gap:'0.75rem', justifyContent:'flex-end', marginTop:'0.5rem' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? <span className="spinner"/> : 'Créer le cours'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+export default function CoursesPage() {
+  const { user } = useAuth()
+  const [courses, setCourses]   = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [subject, setSubject]   = useState('')
+  const [level, setLevel]       = useState('')
+  const [search, setSearch]     = useState('')
+  const [showModal, setShowModal] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    const { data } = await getCourses({ subject: subject||undefined, level: level||undefined, search: search||undefined })
+    setCourses(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [subject, level]) // eslint-disable-line
+
+  const handleSearch = (e) => { e.preventDefault(); load() }
+
+  return (
+    <div className="page-container fade-in">
+      {showModal && <Modal onClose={() => setShowModal(false)} onCreated={c => setCourses(prev => [c, ...prev])} />}
+
+      <div className="page-header">
+        <h1 className="page-title">Cours <span className="badge badge-blue">{courses.length} disponibles</span></h1>
+        {user && <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Ajouter un cours</button>}
+      </div>
+
+      {/* Filters */}
+      <form onSubmit={handleSearch} style={{ display:'flex', gap:'0.75rem', marginBottom:'1.5rem', flexWrap:'wrap' }}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Rechercher un cours..." style={{ flex:'1', minWidth:180 }} />
+        <select value={subject} onChange={e=>setSubject(e.target.value)} style={{ width:'auto', minWidth:150 }}>
+          <option value="">Toutes matières</option>
+          {SUBJECTS.map(s => <option key={s} value={s}>{SUBJECT_EMOJI[s]} {SUBJECT_LABEL[s]}</option>)}
+        </select>
+        <select value={level} onChange={e=>setLevel(e.target.value)} style={{ width:'auto', minWidth:130 }}>
+          <option value="">Tous niveaux</option>
+          {LEVELS.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}
+        </select>
+        <button type="submit" className="btn btn-secondary">Chercher</button>
+      </form>
+
+      {loading ? (
+        <div style={{ display:'flex', justifyContent:'center', padding:'3rem' }}><div className="spinner"/></div>
+      ) : courses.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'3rem', color:'var(--text3)' }}>
+          <div style={{ fontSize:'2.5rem', marginBottom:'1rem' }}>📭</div>
+          <p>Aucun cours trouvé.</p>
+          {user && <button className="btn btn-primary" style={{ marginTop:'1rem' }} onClick={() => setShowModal(true)}>Créer le premier</button>}
+        </div>
+      ) : (
+        <div className="courses-grid">
+          {courses.map(course => {
+            const emoji = SUBJECT_EMOJI[course.subject] ?? '📚'
+            const badgeCls = LEVEL_BADGE[course.level] ?? 'badge-gray'
+            const lvl = LEVEL_LABEL[course.level] ?? course.level
+            return (
+              <Link key={course.id} to={`/courses/${course.id}`} style={{ textDecoration:'none' }}>
+                <div className="card" style={{ cursor:'pointer', transition:'all 0.2s', height:'100%' }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--border2)';e.currentTarget.style.transform='translateY(-2px)'}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor='';e.currentTarget.style.transform=''}}>
+                  <div style={{
+                    height:110, borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:'3rem', background:'rgba(255,255,255,0.03)', marginBottom:'0.85rem', position:'relative',
+                  }}>
+                    {emoji}
+                    <span className={`badge ${badgeCls}`} style={{ position:'absolute', top:8, right:8 }}>{lvl}</span>
+                  </div>
+                  <div style={{ fontWeight:600, marginBottom:'0.2rem', fontSize:'0.92rem' }}>{course.title}</div>
+                  <div style={{ fontSize:'0.75rem', color:'var(--text3)', marginBottom:'0.75rem' }}>
+                    par {course.profiles?.username} · {SUBJECT_LABEL[course.subject] ?? course.subject}
+                  </div>
+                  {course.description && (
+                    <p style={{ fontSize:'0.8rem', color:'var(--text2)', marginBottom:'0.75rem',
+                      display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+                      {course.description}
+                    </p>
+                  )}
+                  <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', marginBottom:'0.75rem' }}>
+                    {(course.tags ?? []).slice(0,3).map(t => <span key={t} className="tag">{t}</span>)}
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:'0.75rem', color:'var(--text2)' }}>📄 {course.files?.[0]?.count ?? 0} fichier(s)</span>
+                    <span style={{ fontSize:'0.75rem', color:'var(--amber)' }}>
+                      {'★'.repeat(Math.round(course.rating||0))}{'☆'.repeat(5-Math.round(course.rating||0))}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
